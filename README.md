@@ -96,7 +96,7 @@ We create separate lists for:
 By comparing the lists of highs and lows for price and RSI:
 
 - We detect whether the price and RSI are diverging.
-- For example, if the price shows a high while the RSI shows a low (or vice versa), this could signal a divergence.
+- For example, if the price shows a higher high while the RSI shows a lower high(or vice versa), this could signal a divergence.
 
 #### **Results**
 
@@ -112,8 +112,6 @@ In our example, the results are as follows:
 3. **Regular Bearish Divergence**:  
    Date: **2024-10-21 14:00:00 +0200 CEST**
 
-We confirm these divergences visually using the previously generated plots:
-
-This step marks the end of the divergence detection demonstration, providing valuable insights for trading strategies.
+We confirm these divergences visually using the previously generated plots.
 
 > **Note**: The images above are generated programmatically from the loaded data.
