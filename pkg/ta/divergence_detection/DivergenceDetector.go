@@ -14,153 +14,62 @@ import (
 	"gonum.org/v1/plot/vg"
 )
 
-type DivergenceDetection struct {
-	Name        string
-	Enabled     bool
-	RunOnWarmUp bool
-}
-
-func New() *DivergenceDetection {
-	strat := &DivergenceDetection{}
-	strat.SetDefaults()
-
-	return strat
-}
-
-func (s *DivergenceDetection) SetDefaults() {
-	s.Name = "divergence_detection_strategy"
-	s.Enabled = true
-	s.RunOnWarmUp = false
-}
-
-func (s *DivergenceDetection) RunStrategy() (error) {
-
-	return nil
-}
-
-func calcDivergence(candleClose []float64, dates []time.Time, interval int) int {
-	if len(candleClose) < 100 {
-		return 0
-	}
-
-	trend := candleClose[0] - candleClose[len(candleClose)-1]
-
+func CalcDivergence(candleClose []float64, dates []time.Time) int {
 	var tempCandleClose []float64
 	var tempCandleDates []time.Time
+	
+	tempCandleClose = make([]float64, len(candleClose))
+	tempCandleDates = make([]time.Time, len(candleClose))
 
-	if interval == 15 {
-		tempCandleClose = make([]float64, 90)
-		tempCandleDates = make([]time.Time, 90)
-
-	} else {
-		tempCandleClose = make([]float64, 44)
-		tempCandleDates = make([]time.Time, 44)
-
-	}
-
-	// we need to reverse the slice because talib calculates from oldest to newest
-	for i, j := 0, len(tempCandleClose)-1; i < j; i, j = i+1, j-1 {
-		tempCandleClose[i], tempCandleClose[j] = candleClose[j], candleClose[i]
-	}
-
-	// we need to reverse the slice because talib calculates from oldest to newest
-	for i, j := 0, len(tempCandleDates)-1; i < j; i, j = i+1, j-1 {
-		tempCandleDates[i], tempCandleDates[j] = dates[j], dates[i]
-	}
+	// we want to move the candleClose and dates to a variable where we can specify the length
+	// lets select the first 50 candles for smaller sample set
+	tempCandleClose = candleClose[0:80]
+	tempCandleDates = dates[0:80]
 
 	rsi := talib.Rsi(tempCandleClose, 14)
 
-	// add 2 copies at the end so we can calculate divergence for last 2 candles
-	for i := 0; i < 2; i++ {
-		rsi = append(rsi, rsi[len(rsi)-1])
-		tempCandleDates = append(tempCandleDates, tempCandleDates[len(tempCandleDates)-1])
-		tempCandleClose = append(tempCandleClose, tempCandleClose[len(tempCandleClose)-1])
-	}
+	order := 4
 
-	//rsi_hh := getHigherHighs(rsi, 5, 2)
-	//rsi_hl := getHigherLows(rsi, 5, 2)
-	//rsi_ll := getLowerLows(rsi, 5, 2)
-	//rsi_lh := getLowerHighs(rsi, 5, 2)
+	// remove the first 14 elements from the array, because we don't have RSI values for them
+	plotLocalHighsAndLows(tempCandleClose[14:], tempCandleDates[14:], order)
+	
+	plotDivergence2(tempCandleClose[14:], tempCandleDates[14:], "trend_lines_price", order)
 
-	// remove first 14 values because rsi is not calculated for them
-	tempCandleDates = tempCandleDates[14:]
-	tempCandleClose = tempCandleClose[14:]
-	rsi = rsi[14:]
-
-	maxLen := len(rsi) - 2
-
-	order := 6
-
-	plotLocalHighsAndLows(tempCandleClose[:maxLen], tempCandleDates[:maxLen], order)
-
-	plotDivergence2(tempCandleClose[:maxLen], tempCandleDates[:maxLen], "Price", order)
-
-	plotDivergence2(rsi[:maxLen], tempCandleDates[:maxLen], "RSI", order)
+	plotDivergence2(rsi[14:], tempCandleDates[14:], "trend_lines_rsi", order)
 
 	dataPeaks := getPeaks(tempCandleClose, order, 2)
 	rsiPeaks := getPeaks(rsi, order, 2)
 
-	logger.Debug("dataPeaks: ", dataPeaks)
-	logger.Debug("rsiPeaks: ", rsiPeaks)
+	divergences := []string{}
 
-	for i := len(dataPeaks["lows"]) - 1; i > len(dataPeaks["lows"])-4; i-- {
-		if trend < 0 {
-			if dataPeaks["lows"][i] == -1 && rsiPeaks["lows"][i] == 1 {
-				// long
-				// logger.Debug("Regular divergence: ", tempCandleDates[i])
-				return 1
-			}
-
-			if dataPeaks["lows"][i] == 1 && rsiPeaks["lows"][i] == -1 {
-				// for now i'm not really liking hidden divergence
-				// logger.Debug("Hidden divergence: ", tempCandleDates[i])
-				return 1
-			}
+	for i := 0; i < len(dataPeaks["lows"]); i++ {
+		if dataPeaks["lows"][i] == -1 && rsiPeaks["lows"][i] == 1 {
+			// long
+			//logger.Debugf("Regular bullish divergence: %v", tempCandleDates[i])
+			divergences = append(divergences, fmt.Sprintf("Regular bullish divergence: %v", tempCandleDates[i]))
 		}
 
-		if trend > 0 {
-			if dataPeaks["highs"][i] == 1 && rsiPeaks["highs"][i] == -1 {
-				// hidden bearish
-				return -1
-			}
+		if dataPeaks["lows"][i] == 1 && rsiPeaks["lows"][i] == -1 {
+			//logger.Debug("Hidden bullis divergence: ", tempCandleDates[i])
+			divergences = append(divergences, fmt.Sprintf("Hidden bullish divergence: %v", tempCandleDates[i]))
+		}
 
-			if dataPeaks["highs"][i] == 1 && rsiPeaks["highs"][i] == -1 {
-				// regular bearish
-				return -1
-			}
+		if dataPeaks["highs"][i] == -1 && rsiPeaks["highs"][i] == 1 {
+			// hidden bearish
+			//logger.Debug("Hidden bearish divergence: ", tempCandleDates[i])
+			divergences = append(divergences, fmt.Sprintf("Hidden bearish divergence: %v", tempCandleDates[i]))
+		}
+
+		if dataPeaks["highs"][i] == 1 && rsiPeaks["highs"][i] == -1 {
+			// regular bearish
+			//logger.Debug("Regular bearish divergence: ", tempCandleDates[i])
+			divergences = append(divergences, fmt.Sprintf("Regular bearish divergence: %v", tempCandleDates[i]))
 		}
 	}
+
+	logger.Debugf("Divergences: %v", divergences)
 
 	return 0
-}
-
-func Smooth(data []float64, windowSize int) []float64 {
-	if windowSize <= 0 {
-		return data // No smoothing if the window size is 0 or negative
-	}
-
-	smoothed := make([]float64, len(data))
-
-	for i := 0; i < len(data); i++ {
-		start := i - windowSize + 1
-		if start < 0 {
-			start = 0
-		}
-
-		sum := 0.0
-		count := 0
-
-		for j := start; j <= i; j++ {
-			if j < len(data) {
-				sum += data[j]
-				count++
-			}
-		}
-
-		smoothed[i] = sum / float64(count)
-	}
-
-	return smoothed
 }
 
 func plotDivergence2(data []float64, dates []time.Time, title string, order int) {
@@ -212,6 +121,36 @@ func plotDivergence2(data []float64, dates []time.Time, title string, order int)
 	}
 
 	fmt.Println("Plot saved as divergence.png")
+}
+
+func plotRsi(data []float64, dates []time.Time) {
+	p := plot.New()
+
+	p.Title.Text = "RSI"
+	p.X.Label.Text = "Date"
+	p.Y.Label.Text = "RSI"
+
+	rsi := talib.Rsi(data, 14)
+
+	ptsRsi := make(plotter.XYs, len(rsi))
+	for i := range rsi {
+		ptsRsi[i].X = float64(i)
+		ptsRsi[i].Y = rsi[i]
+	}
+
+	lineRsi, err := plotter.NewLine(ptsRsi)
+	if err != nil {
+		log.Fatal(err)
+	}
+	lineRsi.Color = color.RGBA{0, 0, 0, 255}
+	p.Add(lineRsi)
+
+	// Save the plot to a file or display it
+	if err := p.Save(6*vg.Inch, 4*vg.Inch, "rsi.png"); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Plot saved as rsi.png")
 }
 
 func plotLocalHighsAndLows(data []float64, dates []time.Time, order int) {
@@ -310,11 +249,6 @@ func getPeaks(data []float64, order, K int) map[string][]float64 {
 	lhIndex := getLHIndex(data, order, K)
 	llIndex := getLLIndex(data, order, K)
 	hlIndex := getHLIndex(data, order, K)
-
-	logger.Debug("hhIndex: ", hhIndex)
-	logger.Debug("lhIndex: ", lhIndex)
-	logger.Debug("llIndex: ", llIndex)
-	logger.Debug("hlIndex: ", hlIndex)
 
 	dataWithPeaks := make(map[string][]float64)
 

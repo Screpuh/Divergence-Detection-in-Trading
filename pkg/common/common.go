@@ -5,11 +5,8 @@ import (
 	"errors"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
-
-	"github.com/divergence/pkg/logger"
 )
 
 func GetFunctionName(i interface{}) string {
@@ -86,31 +83,4 @@ func JSONEncode(v interface{}) ([]byte, error) {
 	return json.Marshal(v)
 }
 
-func Protect(maxPanics int, g func()) {
-	defer func() {
-		if err := recover(); err != nil {
-			logger.Errorf("Goroutine crashed with error : %s", err)
-			debug.PrintStack()
-			if maxPanics < 1 {
-				logger.Debug("Max panics")
-				maxPanics = 10
-			}
-			go Protect(maxPanics-1, g)
-		}
-	}()
-	g()
-}
-func ProtectError(maxPanics int, g func() error) {
-	defer func() {
-		if err := recover(); err != nil {
-			logger.Errorf("Goroutine crashed with error : %s", err)
-			debug.PrintStack()
-			if maxPanics < 1 {
-				logger.Debug("Max panics")
-				maxPanics = 10
-			}
-			go ProtectError(maxPanics-1, g)
-		}
-	}()
-	g()
-}
+
